@@ -28,11 +28,22 @@ const client = new Client({
 const commands = [
     new SlashCommandBuilder()
         .setName('accept')
-        .setDescription('Accept the applicant by replying directly to their submission message.'),
+        .setDescription('Accept the applicant by replying directly to their submission message.')
+        .addStringOption(option => option
+            .setName('message_id')
+            .setDescription('Message ID or link of the application message')
+            .setRequired(false)
+        ),
     new SlashCommandBuilder()
         .setName('reject')
         .setDescription('Reject the applicant by replying directly to their submission message.')
+        .addStringOption(option => option
+            .setName('message_id')
+            .setDescription('Message ID or link of the application message')
+            .setRequired(false)
+        )
 ].map(command => command.toJSON());
+
 
 client.once('ready', async () => {
     console.log(`🎵 Shanty bot is online as ${client.user.tag}!`);
@@ -69,6 +80,70 @@ client.on('messageCreate', async (message) => {
             .setColor(0x00AE86);
 
             await message.channel.send({ embeds: [embed], components: [row] });
+    }
+
+    // Fallback: handle plain-text "/accept" and "/reject" when slash interactions are not available
+    if (message.content === '/accept' || message.content === '/reject') {
+        // Only allow in the configured staff channel
+        if (message.channel.id !== process.env.STAFF_CHANNEL_ID) return;
+
+        // Permission check
+        if (!message.member || !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply({ content: 'You do not have permission to run this command.', ephemeral: false });
+        }
+
+        const referencedMessageId = message.reference?.messageId;
+        if (!referencedMessageId) {
+            return message.reply('Please reply to the application message when using this plain-text command.');
+        }
+
+        const msgReference = await message.channel.messages.fetch(referencedMessageId).catch(() => null);
+        if (!msgReference || !msgReference.embeds || msgReference.embeds.length === 0) {
+            return message.reply('❌ Could not find the original application embed message.');
+        }
+
+        const embed = msgReference.embeds[0];
+        const fields = embed.fields || [];
+        const applicantField = fields.find(f => f.name === 'Applicant')?.value;
+        const nicknameField = fields.find(f => f.name === 'Requested Nickname')?.value || 'Unknown';
+
+        const match = applicantField?.match(/\d+/);
+        if (!match) return message.reply('❌ Could not extract a valid User ID from the applicant field.');
+        const targetUserId = match[0];
+
+        if (message.content === '/accept') {
+            const updatedEmbed = new EmbedBuilder()
+                .setColor(0x2ECC71)
+                .setTitle('Application Approved ✅')
+                .addFields(
+                    { name: 'Applicant', value: `<@${targetUserId}>`, inline: true },
+                    { name: 'Accepted Nickname', value: nicknameField, inline: true },
+                    { name: 'Processed By', value: `<@${message.author.id}>`, inline: false }
+                );
+
+            await msgReference.edit({ embeds: [updatedEmbed], components: [] }).catch(() => null);
+            await message.reply('✅ Application accepted — processing changes.');
+
+            processAcceptance(message.guild, targetUserId, nicknameField).then(success => {
+                if (!success) console.log(`❌ Background acceptance failed for ${targetUserId}`);
+            });
+
+        } else {
+            const updatedEmbed = new EmbedBuilder()
+                .setColor(0xE74C3C)
+                .setTitle('Application Denied ❌')
+                .addFields(
+                    { name: 'Applicant', value: `<@${targetUserId}>`, inline: true },
+                    { name: 'Processed By', value: `<@${message.author.id}>`, inline: false }
+                );
+
+            await msgReference.edit({ embeds: [updatedEmbed], components: [] }).catch(() => null);
+            await message.reply('❌ Application denied.');
+
+            processRejection(message.guild, targetUserId).then(success => {
+                if (!success) console.log(`❌ Background rejection failed for ${targetUserId}`);
+            });
+        }
     }
 });
 
@@ -109,11 +184,19 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             const channel = interaction.channel;
-            const referencedMessageId = interaction.reference?.messageId;
+            // Accept message reference from multiple sources: reply reference, optional command arg, or targetId (context menu)
+            let referencedMessageId = interaction.reference?.messageId || interaction.options.getString?.('message_id') || interaction.targetId;
+
+            // If a message link was provided, extract the ID
+            if (referencedMessageId && referencedMessageId.includes('/')) {
+                const parts = referencedMessageId.split('/');
+                referencedMessageId = parts[parts.length - 1];
+            }
+
             const msgReference = referencedMessageId ? await channel.messages.fetch(referencedMessageId).catch(() => null) : null;
 
             if (!msgReference || !msgReference.embeds || msgReference.embeds.length === 0) {
-                return interaction.reply({ content: "❌ You must use this command as a **Reply** directly to an open application message!", ephemeral: true });
+                return interaction.reply({ content: "❌ You must use this command as a **Reply** directly to an open application message! Provide the message ID as the `message_id` option if your client doesn't include the reply reference.", ephemeral: true });
             }
 
             const embed = msgReference.embeds[0];
