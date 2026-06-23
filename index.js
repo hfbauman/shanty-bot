@@ -1,13 +1,13 @@
 require('dotenv').config();
-const { 
-    Client, 
-    GatewayIntentBits, 
-    ActionRowBuilder, 
-    ButtonBuilder, 
-    ButtonStyle, 
-    ModalBuilder, 
-    TextInputBuilder, 
-    TextInputStyle, 
+const {
+    Client,
+    GatewayIntentBits,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
     EmbedBuilder,
     REST,
     Routes,
@@ -36,7 +36,7 @@ const commands = [
 
 client.once('ready', async () => {
     console.log(`🎵 Shanty bot is online as ${client.user.tag}!`);
-    
+
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     try {
         console.log('Started refreshing application (/) commands.');
@@ -68,7 +68,7 @@ client.on('messageCreate', async (message) => {
             .setDescription('Click the button below to submit your application and set your server nickname.')
             .setColor(0x00AE86);
 
-            await message.channel.send({ embeds: [embed], components: [row] });
+        await message.channel.send({ embeds: [embed], components: [row] });
     }
 });
 
@@ -99,11 +99,11 @@ async function processRejection(guild, targetUserId) {
 
 // Global Interaction Handler
 client.on('interactionCreate', async (interaction) => {
-    
+
     // --- 1. HANDLE SLASH COMMANDS ---
     if (interaction.isChatInputCommand()) {
         if (interaction.commandName === 'accept' || interaction.commandName === 'reject') {
-            
+
             if (interaction.channelId !== process.env.STAFF_CHANNEL_ID) {
                 return interaction.reply({ content: "You can only use this command in the staff review channel.", ephemeral: true });
             }
@@ -150,11 +150,11 @@ client.on('interactionCreate', async (interaction) => {
                 } else {
                     await interaction.editReply({ content: `❌ Error running acceptance. Check server hierarchy restrictions.` });
                 }
-            } 
-            
+            }
+
             else if (interaction.commandName === 'reject') {
                 await processRejection(interaction.guild, targetUserId);
-                
+
                 const updatedEmbed = new EmbedBuilder()
                     .setColor(0xE74C3C)
                     .setTitle('Application Denied ❌')
@@ -177,7 +177,7 @@ client.on('interactionCreate', async (interaction) => {
 
         const nameInput = new TextInputBuilder()
             .setCustomId('app_nickname')
-            .setLabel('What should your server nickname be?')
+            .setLabel('What should your server nickname be? Please keep it close to your irl name.')
             .setStyle(TextInputStyle.Short)
             .setRequired(true)
             .setPlaceholder('e.g., Captain Sally');
